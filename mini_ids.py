@@ -130,9 +130,10 @@ def main():
             current_files = get_dir_snapshot(WATCH_DIR)
             
             # Değişen veya Silinen Dosyalar
-            for filepath, file_hash in baseline_files.items():
+            for filepath, file_hash in list(baseline_files.items()):
                 if filepath not in current_files:
                     log_alert(f"DOSYA SİLİNDİ: {filepath}")
+		    del baseline_files[filepath]
                 elif current_files[filepath] != file_hash:
                     log_alert(f"DOSYA BÜTÜNLÜĞÜ BOZULDU (Hash Değişimi): {filepath}")
                     # Hash güncellenir ki sürekli aynı uyarıyı vermesin (opsiyonel)
