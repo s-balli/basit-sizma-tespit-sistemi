@@ -133,7 +133,7 @@ def main():
             for filepath, file_hash in list(baseline_files.items()):
                 if filepath not in current_files:
                     log_alert(f"DOSYA SİLİNDİ: {filepath}")
-		    		del baseline_files[filepath]
+                    del baseline_files[filepath]
                 elif current_files[filepath] != file_hash:
                     log_alert(f"DOSYA BÜTÜNLÜĞÜ BOZULDU (Hash Değişimi): {filepath}")
                     # Hash güncellenir ki sürekli aynı uyarıyı vermesin (opsiyonel)
