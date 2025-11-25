@@ -19,21 +19,31 @@ Bu proje, Sızma belirleme konusundaki teorik bilgilere dayanarak hazırlanmış
     *   Yeni bir port dinlenmeye başlandığında (örneğin bir arka kapı/backdoor açıldığında) uyarır.
     *   *İlgili Konu:* Ağ bağlantılarını kontrol etme.
 
+4.  **Honeypot (Bal Küpü):**
+    *   `safe_zone` içinde `admin_passwords.txt` adında sahte, cazip bir dosya barındırır.
+    *   Bu dosyaya herhangi bir erişim veya değişiklik yapıldığında sistem **"KRİTİK SALDIRI"** alarmı verir.
+    *   *İlgili Konu:* Saldırgan psikolojisi, Tuzak sistemleri.
+
 ## Kurulum ve Çalıştırma
 
-Bu uygulama Python 3 ile yazılmıştır ve ekstra bir kütüphane kurulumu gerektirmez (Linux standart araçlarını kullanır).
+Bu uygulama Python 3 ile yazılmıştır. Platform bağımsız süreç ve ağ izleme için `psutil` kütüphanesine ihtiyaç duyar.
 
-1.  MiniIDS dizinine gidin:
+1.  Gerekli kütüphaneyi kurun:
+    ```bash
+    pip install psutil
+    ```
+
+2.  MiniIDS dizinine gidin:
     ```bash
     cd MiniIDS
     ```
 
-2.  Uygulamayı başlatın:
+3.  Uygulamayı başlatın:
     ```bash
     python3 mini_ids.py
     ```
 
-3.  **Test Etmek İçin (Saldırı Senaryoları Simülasyonu):**
+4.  **Test Etmek İçin (Saldırı Senaryoları Simülasyonu):**
     *   Uygulama çalışırken başka bir terminal açın.
     *   Aşağıdaki örnek komutları deneyerek MiniIDS'in tepkilerini gözlemleyin.
     *   MiniIDS ekranında **[UYARI]** mesajlarını ve `ids_log.txt` dosyasındaki kayıtları kontrol edin.
@@ -41,17 +51,24 @@ Bu uygulama Python 3 ile yazılmıştır ve ekstra bir kütüphane kurulumu gere
     ### A. Dosya Bütünlük İzleme Testleri:
     *(Bir saldırganın sisteme yeni dosya yüklemesi, mevcut kritik dosyaları değiştirmesi veya izlerini silmek için dosya silmesi senaryolarını simüle eder.)*
 
+    *   **Honeypot (Bal Küpü) Tetikleme (KRİTİK!):**
+        ```bash
+        # Saldırganın ilgisini çekecek 'admin_passwords.txt' dosyasına dokunulması
+        echo "Hacker was here" >> safe_zone/admin_passwords.txt
+        ```
+        *Beklenen Sonuç:* Ekranda kırmızı arka planlı **[!!! KRİTİK SALDIRI !!!]** uyarısı belirir.
+
     *   **Yeni bir dosya oluşturma (Örn: Zararlı yazılım bırakma):**
         ```bash
-        touch MiniIDS/safe_zone/zararli_yazilim.sh
+        touch safe_zone/zararli_yazilim.sh
         ```
     *   **Mevcut bir dosyayı değiştirme (Örn: Yapılandırma dosyası veya Rootkit):**
         ```bash
-        echo "Saldırgan tarafından değiştirildi!" >> MiniIDS/safe_zone/kritik_veriler.txt
+        echo "Saldırgan tarafından değiştirildi!" >> safe_zone/kritik_veriler.txt
         ```
     *   **Bir dosyayı silme (Örn: Logları veya kanıtları silme):**
         ```bash
-        rm MiniIDS/safe_zone/zararli_yazilim.sh
+        rm safe_zone/zararli_yazilim.sh
         ```
 
     ### B. Süreç Anomali Tespiti Testleri:

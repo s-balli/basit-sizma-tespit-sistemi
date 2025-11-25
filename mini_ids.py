@@ -1,7 +1,7 @@
 import os
 import time
 import hashlib
-import subprocess
+import psutil
 import datetime
 import sys
 
@@ -9,15 +9,24 @@ import sys
 WATCH_DIR = "./safe_zone" # Bütünlük kontrolü yapılacak dizin
 POLL_INTERVAL = 5         # Kontrol aralığı (saniye)
 LOG_FILE = "ids_log.txt"
+HONEYPOT_FILE = "admin_passwords.txt" # Tuzak dosya adı
 
-def log_alert(message):
+def log_alert(message, critical=False):
     """
     Uyarıları hem ekrana basar hem de dosyaya kaydeder.
     Konu-05: 'Bildirici' rolünü üstlenir.
     """
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    formatted_msg = f"[{timestamp}] [UYARI] {message}"
-    print(f"\033[91m{formatted_msg}\033[0m") # Kırmızı renkli çıktı
+    
+    if critical:
+        prefix = "[!!! KRİTİK SALDIRI !!!]"
+        color_code = "\033[41;97m" # Kırmızı Arkaplan, Beyaz Yazı (Daha dikkat çekici)
+    else:
+        prefix = "[UYARI]"
+        color_code = "\033[91m" # Sadece Kırmızı Yazı
+
+    formatted_msg = f"[{timestamp}] {prefix} {message}"
+    print(f"{color_code}{formatted_msg}\033[0m") 
     
     with open(LOG_FILE, "a") as f:
         f.write(formatted_msg + "\n")
@@ -60,43 +69,40 @@ def get_dir_snapshot(directory):
 
 def get_running_processes():
     """
-    Linux 'ps' komutunu kullanarak çalışan süreç isimlerini alır.
-    Not: Standart kütüphane kullanarak bağımlılık yaratmamak için subprocess kullanıyoruz.
+    psutil kütüphanesini kullanarak çalışan süreç isimlerini alır.
+    Platform bağımsızdır (Windows/Linux/macOS).
     """
+    processes = set()
     try:
-        # ps -e -o comm= (Sadece komut isimlerini listeler)
-        output = subprocess.check_output(["ps", "-e", "-o", "comm="], text=True)
-        processes = set(output.strip().split('\n'))
-        return processes
-    except subprocess.CalledProcessError:
-        return set()
+        for proc in psutil.process_iter(['name']):
+            try:
+                if proc.info['name']:
+                    processes.add(proc.info['name'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+    except Exception as e:
+        log_info(f"Süreç listesi alınırken hata: {e}")
+    return processes
 
 # --- 3. AĞ İZLEME (Network Monitoring) ---
 # Konu-05: "Ağ Bağlantılarını Kontrol Etme"
 
 def get_open_ports():
     """
-    'ss' (socket statistics) komutu ile dinlenen TCP portlarını alır.
+    psutil ile dinlenen TCP portlarını alır.
     """
+    ports = set()
     try:
-        # ss -tuln (TCP, UDP, Listening, Numeric)
-        output = subprocess.check_output(["ss", "-tuln"], text=True)
-        ports = set()
-        lines = output.strip().split('\n')
-        # İlk satır başlık olduğu için atlıyoruz
-        for line in lines[1:]:
-            parts = line.split()
-            if len(parts) >= 5:
-                # Local Address:Port (örn: 127.0.0.1:8080 veya *:22)
-                local_addr = parts[4]
-                if ':' in local_addr:
-                    port = local_addr.split(':')[-1]
-                    ports.add(port)
-        return ports
-    except FileNotFoundError:
-        return set(["Hata: 'ss' komutu bulunamadı"])
+        connections = psutil.net_connections(kind='inet')
+        for conn in connections:
+            if conn.status == psutil.CONN_LISTEN:
+                ports.add(str(conn.laddr.port))
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        # Bazı sistemlerde tüm bağlantıları görmek için root yetkisi gerekebilir
+        pass
     except Exception as e:
-        return set()
+        log_info(f"Port listesi alınırken hata: {e}")
+    return ports
 
 # --- ANA MOTOR (Main Engine) ---
 # Konu-05: "Yönetici" ve "Ajan" mimarisi
@@ -131,18 +137,33 @@ def main():
             
             # Değişen veya Silinen Dosyalar
             for filepath, file_hash in list(baseline_files.items()):
+                is_honeypot = os.path.basename(filepath) == HONEYPOT_FILE
+                
                 if filepath not in current_files:
-                    log_alert(f"DOSYA SİLİNDİ: {filepath}")
+                    msg = f"DOSYA SİLİNDİ: {filepath}"
+                    if is_honeypot:
+                        log_alert(f"TUZAK DOSYA SİLİNDİ! SALDIRGAN İZLERİ SİLMEYE ÇALIŞIYOR OLABİLİR: {filepath}", critical=True)
+                    else:
+                        log_alert(msg)
                     del baseline_files[filepath]
                 elif current_files[filepath] != file_hash:
-                    log_alert(f"DOSYA BÜTÜNLÜĞÜ BOZULDU (Hash Değişimi): {filepath}")
+                    msg = f"DOSYA BÜTÜNLÜĞÜ BOZULDU (Hash Değişimi): {filepath}"
+                    if is_honeypot:
+                         log_alert(f"TUZAK DOSYA DEĞİŞTİRİLDİ! SALDIRGAN YEMİ YUTTU: {filepath}", critical=True)
+                    else:
+                        log_alert(msg)
                     # Hash güncellenir ki sürekli aynı uyarıyı vermesin (opsiyonel)
                     baseline_files[filepath] = current_files[filepath]
             
             # Yeni Eklenen Dosyalar
             for filepath in current_files:
                 if filepath not in baseline_files:
-                    log_alert(f"YENİ DOSYA TESPİT EDİLDİ: {filepath}")
+                    is_honeypot = os.path.basename(filepath) == HONEYPOT_FILE
+                    # Honeypot sonradan geri eklenirse de uyarı verelim
+                    if is_honeypot:
+                        log_alert(f"TUZAK DOSYA TEKRAR OLUŞTURULDU: {filepath}", critical=True)
+                    else:
+                        log_alert(f"YENİ DOSYA TESPİT EDİLDİ: {filepath}")
                     baseline_files[filepath] = current_files[filepath]
 
             # --- B. Süreç Kontrolü ---
